@@ -11,6 +11,7 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <glm/ext/vector_float3.hpp>
 #include <glm/fwd.hpp>
 #include <glm/glm.hpp>
 #include <vk_mem_alloc.h>
@@ -53,6 +54,8 @@ struct RenderObject {
 
   glm::mat4 transform_matrix;
 };
+
+enum class Move { UP, DOWN, LEFT, RIGHT };
 
 class VulkanEngine {
 public:
@@ -129,6 +132,9 @@ public:
   Mesh *get_mesh(const std::string &name);
 
   void draw_objects(VkCommandBuffer cmd, RenderObject *first, int count);
+
+  glm::vec3 _cam_pos = {0.f, -6.f, -10.f};
+  void move_camera(const Move direction);
 
 private:
   void init_vulkan();

@@ -204,15 +204,19 @@ void VulkanEngine::run()
       case SDL_KEYDOWN:
         switch (e.key.keysym.sym) {
         case SDLK_LEFT:
+          move_camera(Move::LEFT);
           std::cout << "left key\n";
           break;
         case SDLK_RIGHT:
+          move_camera(Move::RIGHT);
           std::cout << "right key\n";
           break;
         case SDLK_UP:
+          move_camera(Move::UP);
           std::cout << "up key\n";
           break;
         case SDLK_DOWN:
+          move_camera(Move::DOWN);
           std::cout << "down key\n";
           break;
         case SDLK_SPACE:
@@ -827,9 +831,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
                                 int count)
 {
   // make a model view matrix for rendering the objects camera view
-  glm::vec3 cam_pos = {0.f, -6.f, -10.f};
-
-  glm::mat4 view = glm::translate(glm::mat4(1.f), cam_pos);
+  glm::mat4 view = glm::translate(glm::mat4(1.f), _cam_pos);
   // camera projection
   glm::mat4 projection =
       glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.f);
@@ -894,5 +896,24 @@ void VulkanEngine::init_scene()
 
       _renderables.push_back(tri);
     }
+  }
+}
+
+
+void VulkanEngine::move_camera(const Move direction)
+{
+  switch (direction) {
+  case Move::UP:
+    _cam_pos.y -= 0.1f;
+    break;
+  case Move::DOWN:
+    _cam_pos.y += 0.1f;
+    break;
+  case Move::LEFT:
+    _cam_pos.x += 0.1f;
+    break;
+  case Move::RIGHT:
+    _cam_pos.x -= 0.1f;
+    break;
   }
 }
