@@ -97,22 +97,11 @@ public:
   bool load_shader_module(const char *file_path,
                           VkShaderModule *out_shader_module);
 
-  VkPipelineLayout _triangle_pipeline_layout;
-
-  VkPipeline _triangle_pipeline;
-  VkPipeline _red_triangle_pipeline;
-
   int _selected_shader{0};
 
   DeletionQueue _main_deletion_queue;
 
   VmaAllocator _allocator;
-
-  VkPipeline _mesh_pipeline;
-  Mesh _triangle_mesh;
-  VkPipelineLayout _mesh_pipeline_layout;
-
-  Mesh _monkey_mesh;
 
   VkImageView _depth_image_view;
   AllocateImage _depth_image;

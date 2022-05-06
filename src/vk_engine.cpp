@@ -605,9 +605,10 @@ void VulkanEngine::init_pipelines()
   // we are not using descriptor sets of other systems yet, so no need to use
   // anything other than empty default
   auto pipeline_layout_info = vkinit::pipeline_layout_create_info();
+  VkPipelineLayout triangle_pipeline_layout;
 
   VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr,
-                                  &_triangle_pipeline_layout));
+                                  &triangle_pipeline_layout));
 
   PipelineBuilder pipeline_builder;
 
@@ -649,9 +650,10 @@ void VulkanEngine::init_pipelines()
   pipeline_builder._color_blend_attachment =
       vkinit::color_blend_attachment_state();
 
-  pipeline_builder._pipeline_layout = _triangle_pipeline_layout;
+  pipeline_builder._pipeline_layout = triangle_pipeline_layout;
 
-  _triangle_pipeline = pipeline_builder.build_pipeline(_device, _render_pass);
+  auto triangle_pipeline =
+      pipeline_builder.build_pipeline(_device, _render_pass);
 
   // clear the shader stages for the builder
   pipeline_builder._shader_stages.clear();
@@ -665,7 +667,7 @@ void VulkanEngine::init_pipelines()
       vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT,
                                                 red_triangle_frag_shader));
 
-  _red_triangle_pipeline =
+  auto red_triangle_pipeline =
       pipeline_builder.build_pipeline(_device, _render_pass);
 
   // build the mesh pipeline
@@ -712,14 +714,15 @@ void VulkanEngine::init_pipelines()
   mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
   mesh_pipeline_layout_info.pushConstantRangeCount = 1;
 
+  VkPipelineLayout mesh_pipeline_layout;
   VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr,
-                                  &_mesh_pipeline_layout));
+                                  &mesh_pipeline_layout));
 
-  pipeline_builder._pipeline_layout = _mesh_pipeline_layout;
+  pipeline_builder._pipeline_layout = mesh_pipeline_layout;
 
-  _mesh_pipeline = pipeline_builder.build_pipeline(_device, _render_pass);
+  auto mesh_pipeline = pipeline_builder.build_pipeline(_device, _render_pass);
 
-  create_material(_mesh_pipeline, _mesh_pipeline_layout, "defaultmesh");
+  create_material(mesh_pipeline, mesh_pipeline_layout, "defaultmesh");
 
   // destroy all shader modules, outside of the queue
   vkDestroyShaderModule(_device, mesh_vert_shader, nullptr);
@@ -728,36 +731,38 @@ void VulkanEngine::init_pipelines()
   vkDestroyShaderModule(_device, triangle_vert_shader, nullptr);
   vkDestroyShaderModule(_device, triangle_frag_shader, nullptr);
 
-  _main_deletion_queue.push_function([this]() {
-    vkDestroyPipeline(_device, _triangle_pipeline, nullptr);
-    vkDestroyPipeline(_device, _red_triangle_pipeline, nullptr);
-    vkDestroyPipeline(_device, _mesh_pipeline, nullptr);
+  _main_deletion_queue.push_function([=, this]() {
+    vkDestroyPipeline(_device, triangle_pipeline, nullptr);
+    vkDestroyPipeline(_device, red_triangle_pipeline, nullptr);
+    vkDestroyPipeline(_device, mesh_pipeline, nullptr);
 
-    vkDestroyPipelineLayout(_device, _triangle_pipeline_layout, nullptr);
-    vkDestroyPipelineLayout(_device, _mesh_pipeline_layout, nullptr);
+    vkDestroyPipelineLayout(_device, triangle_pipeline_layout, nullptr);
+    vkDestroyPipelineLayout(_device, mesh_pipeline_layout, nullptr);
   });
 }
 
 
 void VulkanEngine::load_meshes()
 {
-  _triangle_mesh._vertices.resize(3);
+  Mesh triangle_mesh;
+  triangle_mesh._vertices.resize(3);
 
-  _triangle_mesh._vertices[0].position = {1.f, 1.f, 0.f};
-  _triangle_mesh._vertices[1].position = {-1.f, 1.f, 0.f};
-  _triangle_mesh._vertices[2].position = {0.f, -1.f, 0.f};
+  triangle_mesh._vertices[0].position = {1.f, 1.f, 0.f};
+  triangle_mesh._vertices[1].position = {-1.f, 1.f, 0.f};
+  triangle_mesh._vertices[2].position = {0.f, -1.f, 0.f};
 
-  _triangle_mesh._vertices[0].color = {0.f, 1.f, 0.f};
-  _triangle_mesh._vertices[1].color = {0.f, 1.f, 0.f};
-  _triangle_mesh._vertices[2].color = {0.f, 1.f, 0.f};
+  triangle_mesh._vertices[0].color = {0.f, 1.f, 0.f};
+  triangle_mesh._vertices[1].color = {0.f, 1.f, 0.f};
+  triangle_mesh._vertices[2].color = {0.f, 1.f, 0.f};
 
-  _monkey_mesh.load_from_obj("../assets/monkey_smooth.obj");
+  Mesh monkey_mesh;
+  monkey_mesh.load_from_obj("../assets/monkey_smooth.obj");
 
-  upload_mesh(_triangle_mesh);
-  upload_mesh(_monkey_mesh);
+  upload_mesh(triangle_mesh);
+  upload_mesh(monkey_mesh);
 
-  _meshes["monkey"] = _monkey_mesh;
-  _meshes["triangle"] = _triangle_mesh;
+  _meshes["monkey"] = monkey_mesh;
+  _meshes["triangle"] = triangle_mesh;
 }
 
 
