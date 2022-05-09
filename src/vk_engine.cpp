@@ -4,35 +4,36 @@
 #include "vk_pipeline.h"
 #include "vk_types.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <ios>
+#include <iostream>
+#include <type_traits>
+#include <vector>
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_events.h>
 #include <SDL2/SDL_keycode.h>
 #include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
 
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <fstream>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/vector_float3.hpp>
-#include <glm/trigonometric.hpp>
-#include <ios>
-#include <iostream>
-#include <vector>
-
 #include <VkBootstrap.h>
+
 #include <vulkan/vulkan_core.h>
+
 #define VMA_IMPLEMENTATION
-#include <glm/gtx/transform.hpp>
 #include <vk_mem_alloc.h>
 
-#include "vulkan/vulkan_core.h"
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/gtx/transform.hpp>
+#include <glm/trigonometric.hpp>
 
 constexpr bool bUseValidationLayers = true;
-
-using namespace std;
 
 #define VK_CHECK(x)                                                            \
   do {                                                                         \
@@ -42,6 +43,72 @@ using namespace std;
       abort();                                                                 \
     }                                                                          \
   } while (0)
+
+void heapify_materials(std::vector<RenderObject> &renderables,
+                       const std::size_t size, const std::size_t index)
+{
+  auto largest = index;
+  auto l = 2 * index + 1;
+  auto r = 2 * index + 2;
+
+  if (l < size && renderables.at(l).material > renderables.at(largest).material)
+    largest = l;
+
+  if (r < size && renderables.at(r).material > renderables.at(largest).material)
+    largest = r;
+
+  if (largest != index) {
+    std::swap(renderables.at(index), renderables.at(largest));
+    heapify_materials(renderables, size, largest);
+  }
+}
+
+void heapify_meshes(std::vector<RenderObject> &renderables,
+                    const std::size_t size, const std::size_t index)
+{
+  auto largest = index;
+  auto l = 2 * index + 1;
+  auto r = 2 * index + 2;
+
+  if (l < size && renderables.at(l).mesh > renderables.at(largest).mesh)
+    largest = l;
+
+  if (r < size && renderables.at(r).mesh > renderables.at(largest).mesh)
+    largest = r;
+
+  if (largest != index) {
+    if (renderables.at(index).material == renderables.at(largest).material)
+      std::swap(renderables.at(index), renderables.at(largest));
+    heapify_meshes(renderables, size, largest);
+  }
+}
+
+
+void sort_renderables(std::vector<RenderObject> &renderables)
+{
+  const auto size = renderables.size();
+
+  // sort by material
+  for (int index = static_cast<int>(size - 1); index >= 0; index--)
+    heapify_materials(renderables, size, static_cast<std::size_t>(index));
+
+  for (int index = static_cast<int>(size - 1); index >= 0; index--) {
+    std::swap(renderables.at(0),
+              renderables.at(static_cast<std::size_t>(index)));
+    heapify_materials(renderables, static_cast<std::size_t>(index), 0);
+  }
+
+  // sort by mesh taking into account the material
+  // not sure yet if it's worth to do this
+  for (int index = static_cast<int>(size - 1); index >= 0; index--)
+    heapify_meshes(renderables, size, static_cast<std::size_t>(index));
+
+  for (int index = static_cast<int>(size - 1); index >= 0; index--) {
+    std::swap(renderables.at(0),
+              renderables.at(static_cast<std::size_t>(index)));
+    heapify_meshes(renderables, static_cast<std::size_t>(index), 0);
+  }
+}
 
 
 void VulkanEngine::init()
@@ -64,6 +131,8 @@ void VulkanEngine::init()
   load_meshes();
 
   init_scene();
+
+  sort_renderables(_renderables);
 
   _is_initialized = true;
 }
@@ -605,6 +674,15 @@ void VulkanEngine::init_pipelines()
   // we are not using descriptor sets of other systems yet, so no need to use
   // anything other than empty default
   auto pipeline_layout_info = vkinit::pipeline_layout_create_info();
+  VkPushConstantRange triangle_push_constant;
+  // starts at 0
+  triangle_push_constant.offset = 0;
+  triangle_push_constant.size = sizeof(MeshPushConstants);
+  triangle_push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  pipeline_layout_info.pPushConstantRanges = &triangle_push_constant;
+  pipeline_layout_info.pushConstantRangeCount = 1;
+
   VkPipelineLayout triangle_pipeline_layout;
 
   VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr,
@@ -624,6 +702,21 @@ void VulkanEngine::init_pipelines()
 
   pipeline_builder._vertex_input_info =
       vkinit::vertex_input_state_create_info();
+
+  auto vertex_description = Vertex::get_vertex_description();
+
+  // connect the pipeline builder vertex input info to the one we get from
+  // Vertex
+  pipeline_builder._vertex_input_info.pVertexAttributeDescriptions =
+      vertex_description.attributes.data();
+  pipeline_builder._vertex_input_info.vertexAttributeDescriptionCount =
+      vertex_description.attributes.size();
+
+  pipeline_builder._vertex_input_info.pVertexBindingDescriptions =
+      vertex_description.bindings.data();
+  pipeline_builder._vertex_input_info.vertexBindingDescriptionCount =
+      vertex_description.bindings.size();
+
 
   pipeline_builder._input_assembly =
       vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
@@ -655,6 +748,8 @@ void VulkanEngine::init_pipelines()
   auto triangle_pipeline =
       pipeline_builder.build_pipeline(_device, _render_pass);
 
+  create_material(triangle_pipeline, triangle_pipeline_layout, "tri_mat");
+
   // clear the shader stages for the builder
   pipeline_builder._shader_stages.clear();
 
@@ -670,21 +765,10 @@ void VulkanEngine::init_pipelines()
   auto red_triangle_pipeline =
       pipeline_builder.build_pipeline(_device, _render_pass);
 
+  create_material(red_triangle_pipeline, triangle_pipeline_layout,
+                  "red_tri_mat");
+
   // build the mesh pipeline
-  auto vertex_description = Vertex::get_vertex_description();
-
-  // connect the pipeline builder vertex input info to the one we get from
-  // Vertex
-  pipeline_builder._vertex_input_info.pVertexAttributeDescriptions =
-      vertex_description.attributes.data();
-  pipeline_builder._vertex_input_info.vertexAttributeDescriptionCount =
-      vertex_description.attributes.size();
-
-  pipeline_builder._vertex_input_info.pVertexBindingDescriptions =
-      vertex_description.bindings.data();
-  pipeline_builder._vertex_input_info.vertexBindingDescriptionCount =
-      vertex_description.bindings.size();
-
   pipeline_builder._shader_stages.clear();
 
   VkShaderModule mesh_vert_shader;
@@ -758,11 +842,26 @@ void VulkanEngine::load_meshes()
   Mesh monkey_mesh;
   monkey_mesh.load_from_obj("../assets/monkey_smooth.obj");
 
+  Mesh structure_mesh;
+  structure_mesh.load_from_obj("../assets/structure.obj");
+
+  Mesh fence_mesh;
+  fence_mesh.load_from_obj("../assets/fence.obj");
+
+  Mesh roof_mesh;
+  roof_mesh.load_from_obj("../assets/roof.obj");
+
   upload_mesh(triangle_mesh);
   upload_mesh(monkey_mesh);
+  upload_mesh(structure_mesh);
+  upload_mesh(fence_mesh);
+  upload_mesh(roof_mesh);
 
   _meshes["monkey"] = monkey_mesh;
   _meshes["triangle"] = triangle_mesh;
+  _meshes["structure"] = structure_mesh;
+  _meshes["fence"] = fence_mesh;
+  _meshes["roof"] = roof_mesh;
 }
 
 
@@ -892,8 +991,23 @@ void VulkanEngine::init_scene()
   for (int x = -20; x <= 20; x++) {
     for (int y = -20; y <= 20; y++) {
       RenderObject tri;
-      tri.mesh = get_mesh("triangle");
-      tri.material = get_material("defaultmesh");
+
+      if (y % 4 == 0)
+        tri.mesh = get_mesh("triangle");
+      else if (y % 4 == 1)
+        tri.mesh = get_mesh("structure");
+      else if (y % 4 == 2)
+        tri.mesh = get_mesh("fence");
+      else
+        tri.mesh = get_mesh("roof");
+
+      if (abs(y % 3) == 0)
+        tri.material = get_material("defaultmesh");
+      else if (abs(y % 3) == 1)
+        tri.material = get_material("red_tri_mat");
+      else
+        tri.material = get_material("tri_mat");
+
       glm::mat4 translation =
           glm::translate(glm::mat4{1.0}, glm::vec3(x, 0, y));
       glm::mat4 scale = glm::scale(glm::mat4{1.0}, glm::vec3(0.2, 0.2, 0.2));

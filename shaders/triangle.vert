@@ -1,11 +1,17 @@
 #version 450
 
-void main() {
-    const vec3 positions[3] = vec3[3](
-        vec3(1.f, 1.f, 0.0f),
-        vec3(-1.f, 1.f, 0.0f),
-        vec3(0.f, -1.f, 0.0f)
-    );
+layout (location = 0) in vec3 vPosition;
+layout (location = 1) in vec3 vNormal;
+layout (location = 2) in vec3 vColor;
 
-    gl_Position = vec4(positions[gl_VertexIndex], 1.0f);
+layout (location = 0) out vec3 outColor;
+
+layout( push_constant ) uniform constants {
+    vec4 data;
+    mat4 render_matrix;
+} PushConstants;
+
+void main() {
+    gl_Position = PushConstants.render_matrix * vec4(vPosition, 1.f);
+    outColor = vColor;
 }
