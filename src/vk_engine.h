@@ -55,12 +55,22 @@ struct RenderObject {
   glm::mat4 transform_matrix;
 };
 
+struct FrameData {
+  VkSemaphore _present_semaphore, _render_semaphore;
+  VkFence _render_fence;
+
+  VkCommandPool _command_pool;
+  VkCommandBuffer _main_command_buffer;
+};
+
 enum class Move { UP, DOWN, LEFT, RIGHT };
+
+constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
 public:
   bool _is_initialized{false};
-  int _frame_number{0};
+  unsigned int _frame_number{0};
 
   VkExtent2D _windowExtent{1700, 900};
 
@@ -85,14 +95,8 @@ public:
   VkQueue _graphics_queue;
   uint32_t _graphics_queue_family;
 
-  VkCommandPool _command_pool;
-  VkCommandBuffer _main_command_buffer;
-
   VkRenderPass _render_pass;
   std::vector<VkFramebuffer> _framebuffers;
-
-  VkSemaphore _present_semaphore, _render_semaphore;
-  VkFence _render_fence;
 
   bool load_shader_module(const char *file_path,
                           VkShaderModule *out_shader_module);
@@ -124,6 +128,11 @@ public:
 
   glm::vec3 _cam_pos = {0.f, -6.f, -10.f};
   void move_camera(const Move direction);
+
+  // frame storage
+  FrameData _frames[FRAME_OVERLAP];
+
+  FrameData &get_current_frame();
 
 private:
   void init_vulkan();

@@ -160,19 +160,20 @@ void VulkanEngine::cleanup()
 void VulkanEngine::draw()
 {
   // wait until GPU has finished rendering the last frame. Timeout of 1 second
-  VK_CHECK(vkWaitForFences(_device, 1, &_render_fence, VK_TRUE, 1000000000));
-  VK_CHECK(vkResetFences(_device, 1, &_render_fence));
+  VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._render_fence,
+                           VK_TRUE, 1000000000));
+  VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._render_fence));
 
   // request image from the swapchain, one second timeout
   uint32_t swapchain_image_index;
   VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000,
-                                 _present_semaphore, nullptr,
-                                 &swapchain_image_index));
+                                 get_current_frame()._present_semaphore,
+                                 nullptr, &swapchain_image_index));
 
-  VK_CHECK(vkResetCommandBuffer(_main_command_buffer, 0));
+  VK_CHECK(vkResetCommandBuffer(get_current_frame()._main_command_buffer, 0));
 
   // naming it cmd for shorter writing
-  auto cmd = _main_command_buffer;
+  auto cmd = get_current_frame()._main_command_buffer;
 
   VkCommandBufferBeginInfo cmd_begin_info = {};
   cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -184,7 +185,7 @@ void VulkanEngine::draw()
   VK_CHECK(vkBeginCommandBuffer(cmd, &cmd_begin_info));
 
   VkClearValue clear_value;
-  float flash = abs(sin(_frame_number / 120.f));
+  float flash = abs(sin(static_cast<float>(_frame_number) / 120.f));
   clear_value.color = {{0.0f, 0.0f, flash, 1.0f}};
 
   // clear depth at 1
@@ -204,7 +205,7 @@ void VulkanEngine::draw()
 
   vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
 
-  draw_objects(cmd, _renderables.data(), _renderables.size());
+  draw_objects(cmd, _renderables.data(), static_cast<int>(_renderables.size()));
 
   vkCmdEndRenderPass(cmd);
   VK_CHECK(vkEndCommandBuffer(cmd));
@@ -224,17 +225,18 @@ void VulkanEngine::draw()
   submit.pWaitDstStageMask = &wait_stage;
 
   submit.waitSemaphoreCount = 1;
-  submit.pWaitSemaphores = &_present_semaphore;
+  submit.pWaitSemaphores = &get_current_frame()._present_semaphore;
 
   submit.signalSemaphoreCount = 1;
-  submit.pSignalSemaphores = &_render_semaphore;
+  submit.pSignalSemaphores = &get_current_frame()._render_semaphore;
 
   submit.commandBufferCount = 1;
   submit.pCommandBuffers = &cmd;
 
   // submit command buffer to the queue and execute it
   // _render_fence will now block until the graphics commands finish execution
-  VK_CHECK(vkQueueSubmit(_graphics_queue, 1, &submit, _render_fence));
+  VK_CHECK(vkQueueSubmit(_graphics_queue, 1, &submit,
+                         get_current_frame()._render_fence));
 
   // this will put the image we just rendered into the visible window
   // we wannt to wait on the _render_semaphore for that
@@ -247,7 +249,7 @@ void VulkanEngine::draw()
   present_info.pSwapchains = &_swapchain;
   present_info.swapchainCount = 1;
 
-  present_info.pWaitSemaphores = &_render_semaphore;
+  present_info.pWaitSemaphores = &get_current_frame()._render_semaphore;
   present_info.waitSemaphoreCount = 1;
 
   present_info.pImageIndices = &swapchain_image_index;
@@ -420,17 +422,21 @@ void VulkanEngine::init_commands()
   auto command_pool_info = vkinit::command_pool_create_info(
       _graphics_queue_family, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
-  VK_CHECK(vkCreateCommandPool(_device, &command_pool_info, nullptr,
-                               &_command_pool));
+  for (unsigned int index = 0; index < FRAME_OVERLAP; index++) {
+    VK_CHECK(vkCreateCommandPool(_device, &command_pool_info, nullptr,
+                                 &_frames[index]._command_pool));
 
-  // allocate the default command buffer that we will use for rendering
-  auto cmd_alloc_info = vkinit::command_buffer_allocate_info(_command_pool);
+    // allocate the default command buffer that we will use for rendering
+    auto cmd_alloc_info =
+        vkinit::command_buffer_allocate_info(_frames[index]._command_pool);
 
-  VK_CHECK(vkAllocateCommandBuffers(_device, &cmd_alloc_info,
-                                    &_main_command_buffer));
+    VK_CHECK(vkAllocateCommandBuffers(_device, &cmd_alloc_info,
+                                      &_frames[index]._main_command_buffer));
 
-  _main_deletion_queue.push_function(
-      [this]() { vkDestroyCommandPool(_device, _command_pool, nullptr); });
+    _main_deletion_queue.push_function([=]() {
+      vkDestroyCommandPool(_device, _frames[index]._command_pool, nullptr);
+    });
+  }
 }
 
 
@@ -574,23 +580,28 @@ void VulkanEngine::init_sync_structures()
   // on it before using it on a GPU command (for the first frame)
   auto fence_info = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
 
-  VK_CHECK(vkCreateFence(_device, &fence_info, nullptr, &_render_fence));
-
-  _main_deletion_queue.push_function(
-      [this]() { vkDestroyFence(_device, _render_fence, nullptr); });
-
   // for the semaphores we dont need any flags
   auto semaphore_info = vkinit::semaphore_create_info();
 
-  VK_CHECK(vkCreateSemaphore(_device, &semaphore_info, nullptr,
-                             &_present_semaphore));
-  VK_CHECK(
-      vkCreateSemaphore(_device, &semaphore_info, nullptr, &_render_semaphore));
+  for (unsigned int index = 0; index < FRAME_OVERLAP; index++) {
+    VK_CHECK(vkCreateFence(_device, &fence_info, nullptr,
+                           &_frames[index]._render_fence));
 
-  _main_deletion_queue.push_function([this]() {
-    vkDestroySemaphore(_device, _present_semaphore, nullptr);
-    vkDestroySemaphore(_device, _render_semaphore, nullptr);
-  });
+    _main_deletion_queue.push_function([=]() {
+      vkDestroyFence(_device, _frames[index]._render_fence, nullptr);
+    });
+
+
+    VK_CHECK(vkCreateSemaphore(_device, &semaphore_info, nullptr,
+                               &_frames[index]._present_semaphore));
+    VK_CHECK(vkCreateSemaphore(_device, &semaphore_info, nullptr,
+                               &_frames[index]._render_semaphore));
+
+    _main_deletion_queue.push_function([=]() {
+      vkDestroySemaphore(_device, _frames[index]._present_semaphore, nullptr);
+      vkDestroySemaphore(_device, _frames[index]._render_semaphore, nullptr);
+    });
+  }
 }
 
 
@@ -1035,4 +1046,9 @@ void VulkanEngine::move_camera(const Move direction)
     _cam_pos.x -= 0.1f;
     break;
   }
+}
+
+FrameData &VulkanEngine::get_current_frame()
+{
+  return _frames[_frame_number % FRAME_OVERLAP];
 }
