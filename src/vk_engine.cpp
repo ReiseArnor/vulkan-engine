@@ -32,6 +32,7 @@
 #include <glm/ext/vector_float3.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/trigonometric.hpp>
+#include <glm/vector_relational.hpp>
 
 constexpr bool bUseValidationLayers = true;
 
@@ -126,6 +127,7 @@ void VulkanEngine::init()
   init_default_renderpass();
   init_framebuffers();
   init_sync_structures();
+  init_descriptors();
   init_pipelines();
 
   load_meshes();
@@ -276,19 +278,15 @@ void VulkanEngine::run()
         switch (e.key.keysym.sym) {
         case SDLK_LEFT:
           move_camera(Move::LEFT);
-          std::cout << "left key\n";
           break;
         case SDLK_RIGHT:
           move_camera(Move::RIGHT);
-          std::cout << "right key\n";
           break;
         case SDLK_UP:
           move_camera(Move::UP);
-          std::cout << "up key\n";
           break;
         case SDLK_DOWN:
           move_camera(Move::DOWN);
-          std::cout << "down key\n";
           break;
         case SDLK_SPACE:
           ++_selected_shader;
@@ -296,9 +294,6 @@ void VulkanEngine::run()
             _selected_shader = 0;
           break;
         }
-        break;
-      case SDL_MOUSEWHEEL:
-        std::cout << "mouse wheel\n";
         break;
       }
     }
@@ -809,6 +804,9 @@ void VulkanEngine::init_pipelines()
   mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
   mesh_pipeline_layout_info.pushConstantRangeCount = 1;
 
+  mesh_pipeline_layout_info.setLayoutCount = 1;
+  mesh_pipeline_layout_info.pSetLayouts = &_global_set_layout;
+
   VkPipelineLayout mesh_pipeline_layout;
   VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr,
                                   &mesh_pipeline_layout));
@@ -952,6 +950,20 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
       glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.f);
   projection[1][1] *= -1;
 
+  GPUCameraData cam_data;
+  cam_data.proj = projection;
+  cam_data.view = view;
+  cam_data.viewproj = projection * view;
+
+  // copy it to the buffer
+  void *data;
+  vmaMapMemory(_allocator, get_current_frame().camera_buffer._allocation,
+               &data);
+
+  memcpy(data, &cam_data, sizeof(GPUCameraData));
+
+  vmaUnmapMemory(_allocator, get_current_frame().camera_buffer._allocation);
+
   Mesh *last_mesh = nullptr;
   Material *last_material = nullptr;
   for (int i = 0; i < count; i++) {
@@ -962,14 +974,15 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         object.material->pipeline);
       last_material = object.material;
+      // bind the descriptor set when changing pipeline
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              object.material->pipeline_layout, 0, 1,
+                              &get_current_frame().global_descriptor, 0,
+                              nullptr);
     }
 
-    glm::mat4 model = object.transform_matrix;
-    // final render matrix, that we are calculation on the cpu
-    glm::mat4 mesh_matrix = projection * view * model;
-
     MeshPushConstants constants;
-    constants.render_matrix = mesh_matrix;
+    constants.render_matrix = object.transform_matrix;
 
     // upload the mesh to the GPU via push constants
     vkCmdPushConstants(cmd, object.material->pipeline_layout,
@@ -985,7 +998,8 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
     }
 
     // we can now draw
-    vkCmdDraw(cmd, object.mesh->_vertices.size(), 1, 0, 0);
+    vkCmdDraw(cmd, static_cast<uint32_t>(object.mesh->_vertices.size()), 1, 0,
+              0);
   }
 }
 
@@ -1012,12 +1026,12 @@ void VulkanEngine::init_scene()
       else
         tri.mesh = get_mesh("roof");
 
-      if (abs(y % 3) == 0)
-        tri.material = get_material("defaultmesh");
-      else if (abs(y % 3) == 1)
-        tri.material = get_material("red_tri_mat");
-      else
-        tri.material = get_material("tri_mat");
+      // if (abs(y % 3) == 0)
+      tri.material = get_material("defaultmesh");
+      // else if (abs(y % 3) == 1)
+      // tri.material = get_material("red_tri_mat");
+      // else
+      // tri.material = get_material("tri_mat");
 
       glm::mat4 translation =
           glm::translate(glm::mat4{1.0}, glm::vec3(x, 0, y));
@@ -1048,7 +1062,121 @@ void VulkanEngine::move_camera(const Move direction)
   }
 }
 
+
 FrameData &VulkanEngine::get_current_frame()
 {
   return _frames[_frame_number % FRAME_OVERLAP];
+}
+
+
+AllocatedBuffer VulkanEngine::create_buffer(const size_t alloc_size,
+                                            const VkBufferUsageFlagBits usage,
+                                            const VmaMemoryUsage memory_usage)
+{
+  // allocate vertex buffer
+  VkBufferCreateInfo buffer_info = {};
+  buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  buffer_info.pNext = nullptr;
+
+  buffer_info.size = alloc_size;
+  buffer_info.usage = usage;
+
+  VmaAllocationCreateInfo vma_alloc_info = {};
+  vma_alloc_info.usage = memory_usage;
+
+  AllocatedBuffer new_buffer;
+
+  VK_CHECK(vmaCreateBuffer(_allocator, &buffer_info, &vma_alloc_info,
+                           &new_buffer._buffer, &new_buffer._allocation,
+                           nullptr));
+
+  return new_buffer;
+}
+
+
+void VulkanEngine::init_descriptors()
+{
+  // create a descriptor pool that will hold 10 uniform buffers
+  std::vector<VkDescriptorPoolSize> sizes = {
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}};
+
+  VkDescriptorPoolCreateInfo pool_info = {};
+  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.flags = 0;
+  pool_info.maxSets = 10;
+  pool_info.poolSizeCount = static_cast<uint32_t>(sizes.size());
+  pool_info.pPoolSizes = sizes.data();
+
+  vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptor_pool);
+
+  // camera buffer binding
+  VkDescriptorSetLayoutBinding cam_buffer_binding = {};
+  cam_buffer_binding.binding = 0;
+  cam_buffer_binding.descriptorCount = 1;
+  // uniform buffer
+  cam_buffer_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+  cam_buffer_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutCreateInfo set_info = {};
+  set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  set_info.pNext = nullptr;
+
+  set_info.bindingCount = 1;
+  set_info.flags = 0;
+
+  // point to the camera buffer binding
+  set_info.pBindings = &cam_buffer_binding;
+
+  vkCreateDescriptorSetLayout(_device, &set_info, nullptr, &_global_set_layout);
+
+  for (unsigned int index = 0; index < FRAME_OVERLAP; index++) {
+    _frames[index].camera_buffer =
+        create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                      VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    // allocate one descriptor set for each frame
+    VkDescriptorSetAllocateInfo alloc_info = {};
+    alloc_info.pNext = nullptr;
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+
+    alloc_info.descriptorPool = _descriptor_pool;
+    alloc_info.descriptorSetCount = 1;
+    alloc_info.pSetLayouts = &_global_set_layout;
+
+    vkAllocateDescriptorSets(_device, &alloc_info,
+                             &_frames[index].global_descriptor);
+
+    // point to the buffer
+    VkDescriptorBufferInfo bin_info;
+    bin_info.buffer = _frames[index].camera_buffer._buffer;
+    bin_info.offset = 0;
+    bin_info.range = sizeof(GPUCameraData);
+
+    VkWriteDescriptorSet set_write = {};
+    set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    set_write.pNext = nullptr;
+
+    // write into binding number 0
+    set_write.dstBinding = 0;
+    // of the global_descriptor
+    set_write.dstSet = _frames[index].global_descriptor;
+
+    set_write.descriptorCount = 1;
+    set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    set_write.pBufferInfo = &bin_info;
+
+    vkUpdateDescriptorSets(_device, 1, &set_write, 0, nullptr);
+  }
+
+  for (unsigned int index = 0; index < FRAME_OVERLAP; index++)
+    _main_deletion_queue.push_function([&]() {
+      vmaDestroyBuffer(_allocator, _frames[index].camera_buffer._buffer,
+                       _frames[index].camera_buffer._allocation);
+    });
+
+  _main_deletion_queue.push_function([&]() {
+    vkDestroyDescriptorSetLayout(_device, _global_set_layout, nullptr);
+    vkDestroyDescriptorPool(_device, _descriptor_pool, nullptr);
+  });
 }

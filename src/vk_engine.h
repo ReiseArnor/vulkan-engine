@@ -2,6 +2,7 @@
 #include "vk_mesh.h"
 #include "vk_types.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -61,6 +62,17 @@ struct FrameData {
 
   VkCommandPool _command_pool;
   VkCommandBuffer _main_command_buffer;
+
+  // buffer that hodls a single GPUCameraData to use when rendering
+  AllocatedBuffer camera_buffer;
+
+  VkDescriptorSet global_descriptor;
+};
+
+struct GPUCameraData {
+  glm::mat4 view;
+  glm::mat4 proj;
+  glm::mat4 viewproj;
 };
 
 enum class Move { UP, DOWN, LEFT, RIGHT };
@@ -134,6 +146,13 @@ public:
 
   FrameData &get_current_frame();
 
+  AllocatedBuffer create_buffer(const size_t alloc_size,
+                                const VkBufferUsageFlagBits usage,
+                                const VmaMemoryUsage memory_usage);
+
+  VkDescriptorSetLayout _global_set_layout;
+  VkDescriptorPool _descriptor_pool;
+
 private:
   void init_vulkan();
   void init_swapchain();
@@ -143,6 +162,7 @@ private:
   void init_sync_structures();
   void init_pipelines();
   void init_scene();
+  void init_descriptors();
 
   void load_meshes();
   void upload_mesh(Mesh &mesh);
