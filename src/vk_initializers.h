@@ -50,4 +50,12 @@ VkRenderPassBeginInfo render_pass_begin_info(VkRenderPass render_pass,
                                              VkExtent2D extent,
                                              VkFramebuffer framebuffer);
 
+VkDescriptorSetLayoutBinding
+descriptor_set_layout_binding(VkDescriptorType type,
+                              VkShaderStageFlags stage_flags, uint32_t binding);
+
+VkWriteDescriptorSet
+write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dst_set,
+                        VkDescriptorBufferInfo *buffer_info, uint32_t binding);
+
 } // namespace vkinit

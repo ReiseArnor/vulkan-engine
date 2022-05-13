@@ -15,6 +15,7 @@ vkinit::command_pool_create_info(uint32_t queue_family_index,
   return info;
 }
 
+
 VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
     VkCommandPool pool, uint32_t count /*= 1*/,
     VkCommandBufferLevel level /*= VK_COMMAND_BUFFER_LEVEL_PRIMARY*/)
@@ -28,6 +29,7 @@ VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
   info.level = level;
   return info;
 }
+
 
 VkPipelineShaderStageCreateInfo
 vkinit::pipeline_shader_stage_create_info(VkShaderStageFlagBits stage,
@@ -43,6 +45,7 @@ vkinit::pipeline_shader_stage_create_info(VkShaderStageFlagBits stage,
   info.pName = "main";
   return info;
 }
+
 
 VkPipelineVertexInputStateCreateInfo vkinit::vertex_input_state_create_info()
 {
@@ -61,6 +64,7 @@ VkPipelineVertexInputStateCreateInfo vkinit::vertex_input_state_create_info()
   return info;
 }
 
+
 VkPipelineInputAssemblyStateCreateInfo
 vkinit::input_assembly_create_info(VkPrimitiveTopology topology)
 {
@@ -73,6 +77,7 @@ vkinit::input_assembly_create_info(VkPrimitiveTopology topology)
   info.primitiveRestartEnable = VK_FALSE;
   return info;
 }
+
 
 VkPipelineRasterizationStateCreateInfo
 vkinit::rasterization_state_create_info(VkPolygonMode polygon_mode)
@@ -99,6 +104,7 @@ vkinit::rasterization_state_create_info(VkPolygonMode polygon_mode)
   return info;
 }
 
+
 VkPipelineMultisampleStateCreateInfo vkinit::multisampling_state_create_info()
 {
   VkPipelineMultisampleStateCreateInfo info = {};
@@ -115,6 +121,7 @@ VkPipelineMultisampleStateCreateInfo vkinit::multisampling_state_create_info()
   return info;
 }
 
+
 VkPipelineColorBlendAttachmentState vkinit::color_blend_attachment_state()
 {
   VkPipelineColorBlendAttachmentState color_blend_attachment = {};
@@ -124,6 +131,7 @@ VkPipelineColorBlendAttachmentState vkinit::color_blend_attachment_state()
   color_blend_attachment.blendEnable = VK_FALSE;
   return color_blend_attachment;
 }
+
 
 VkPipelineLayoutCreateInfo vkinit::pipeline_layout_create_info()
 {
@@ -140,6 +148,7 @@ VkPipelineLayoutCreateInfo vkinit::pipeline_layout_create_info()
   return info;
 }
 
+
 VkFenceCreateInfo vkinit::fence_create_info(VkFenceCreateFlags flags /*=0 */)
 {
   VkFenceCreateInfo info = {};
@@ -148,6 +157,7 @@ VkFenceCreateInfo vkinit::fence_create_info(VkFenceCreateFlags flags /*=0 */)
   info.flags = flags;
   return info;
 }
+
 
 VkSemaphoreCreateInfo
 vkinit::semaphore_create_info(VkSemaphoreCreateFlags flags /*=0 */)
@@ -158,6 +168,7 @@ vkinit::semaphore_create_info(VkSemaphoreCreateFlags flags /*=0 */)
   info.flags = flags;
   return info;
 }
+
 
 VkImageCreateInfo vkinit::image_create_info(VkFormat format,
                                             VkImageUsageFlags usage_flags,
@@ -180,6 +191,7 @@ VkImageCreateInfo vkinit::image_create_info(VkFormat format,
   return info;
 }
 
+
 VkImageViewCreateInfo
 vkinit::image_view_create_info(VkFormat format, VkImage image,
                                VkImageAspectFlags aspect_flags)
@@ -200,6 +212,7 @@ vkinit::image_view_create_info(VkFormat format, VkImage image,
   return info;
 }
 
+
 VkPipelineDepthStencilStateCreateInfo
 vkinit::depth_stencil_create_info(bool depth_test, bool depth_write,
                                   VkCompareOp compare_op)
@@ -217,6 +230,7 @@ vkinit::depth_stencil_create_info(bool depth_test, bool depth_write,
   return info;
 }
 
+
 VkRenderPassBeginInfo vkinit::render_pass_begin_info(VkRenderPass render_pass,
                                                      VkExtent2D extent,
                                                      VkFramebuffer framebuffer)
@@ -231,4 +245,37 @@ VkRenderPassBeginInfo vkinit::render_pass_begin_info(VkRenderPass render_pass,
   info.renderArea.extent = extent;
   info.framebuffer = framebuffer;
   return info;
+}
+
+
+VkDescriptorSetLayoutBinding vkinit::descriptor_set_layout_binding(
+    VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding)
+{
+  VkDescriptorSetLayoutBinding set_bind = {};
+  set_bind.binding = binding;
+  set_bind.descriptorCount = 1;
+  set_bind.descriptorType = type;
+  set_bind.pImmutableSamplers = nullptr;
+  set_bind.stageFlags = stage_flags;
+
+  return set_bind;
+}
+
+
+VkWriteDescriptorSet
+vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dst_set,
+                                VkDescriptorBufferInfo *buffer_info,
+                                uint32_t binding)
+{
+  VkWriteDescriptorSet write = {};
+  write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  write.pNext = nullptr;
+
+  write.dstBinding = binding;
+  write.dstSet = dst_set;
+  write.descriptorCount = 1;
+  write.descriptorType = type;
+  write.pBufferInfo = buffer_info;
+
+  return write;
 }

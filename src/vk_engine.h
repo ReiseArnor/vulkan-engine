@@ -75,6 +75,14 @@ struct GPUCameraData {
   glm::mat4 viewproj;
 };
 
+struct GPUSceneData {
+  glm::vec4 fog_color;     // w is for exponent
+  glm::vec4 fog_distances; // x for min, y for max, zw unused
+  glm::vec4 ambient_color;
+  glm::vec4 sunlight_direction; // w for sun power
+  glm::vec4 sunlight_color;
+};
+
 enum class Move { UP, DOWN, LEFT, RIGHT };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -136,6 +144,9 @@ public:
   Material *get_material(const std::string &name);
   Mesh *get_mesh(const std::string &name);
 
+  void load_meshes();
+  void upload_mesh(Mesh &mesh);
+
   void draw_objects(VkCommandBuffer cmd, RenderObject *first, int count);
 
   glm::vec3 _cam_pos = {0.f, -6.f, -10.f};
@@ -153,6 +164,13 @@ public:
   VkDescriptorSetLayout _global_set_layout;
   VkDescriptorPool _descriptor_pool;
 
+  VkPhysicalDeviceProperties _gpu_properties;
+
+  GPUSceneData _scene_parameters;
+  AllocatedBuffer _scene_parameters_buffer;
+
+  size_t pad_uniform_buffer_size(size_t original_size);
+
 private:
   void init_vulkan();
   void init_swapchain();
@@ -163,7 +181,4 @@ private:
   void init_pipelines();
   void init_scene();
   void init_descriptors();
-
-  void load_meshes();
-  void upload_mesh(Mesh &mesh);
 };
