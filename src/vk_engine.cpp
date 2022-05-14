@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <glm/fwd.hpp>
 #include <ios>
 #include <iostream>
 #include <type_traits>
@@ -144,7 +145,7 @@ void VulkanEngine::init()
   init_scene();
   std::cout << "scene initialized\n";
 
-  sort_renderables(_renderables);
+  // sort_renderables(_renderables);
 
   _is_initialized = true;
 }
@@ -653,72 +654,58 @@ bool VulkanEngine::load_shader_module(const char *file_path,
 
 void VulkanEngine::init_pipelines()
 {
-  VkShaderModule triangle_frag_shader;
+  VkShaderModule color_frag_shader;
   if (!load_shader_module("../shaders/default_lit.frag.spv",
-                          &triangle_frag_shader)) {
+                          &color_frag_shader)) {
     std::cout << "Error when building the triangle fragment shader module\n";
   }
   else {
     std::cout << "Triangle fragment shader successfully loaded\n";
   }
 
-  VkShaderModule triangle_vert_shader;
-  if (!load_shader_module("../shaders/colored_triangle.vert.spv",
-                          &triangle_vert_shader)) {
-    std::cout << "Error when building the triangle vertex shader module\n";
+  VkShaderModule mesh_vert_shader;
+  if (!load_shader_module("../shaders/tri_mesh.vert.spv", &mesh_vert_shader)) {
+    std::cout << "Error when building the mesh triangle vertex shader module\n";
   }
   else {
-    std::cout << "Triangle vertex shader successfully loaded\n";
+    std::cout << "Mesh triangle vertex shader successfully loaded\n";
   }
 
-  VkShaderModule red_triangle_vert_shader;
-  if (!load_shader_module("../shaders/triangle.vert.spv",
-                          &red_triangle_vert_shader)) {
-    std::cout << "Error when building the red triangle vertex shader module\n";
-  }
-  else {
-    std::cout << "Red triangle vertex shader successfully loaded\n";
-  }
+  PipelineBuilder pipeline_builder;
 
-  VkShaderModule red_triangle_frag_shader;
-  if (!load_shader_module("../shaders/triangle.frag.spv",
-                          &red_triangle_frag_shader)) {
-    std::cout
-        << "Error when building the red triangle fragment shader module\n";
-  }
-  else {
-    std::cout << "Red triangle fragment shader successfully loaded\n";
-  }
+  pipeline_builder._shader_stages.push_back(
+      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT,
+                                                mesh_vert_shader));
+
+  pipeline_builder._shader_stages.push_back(
+      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                color_frag_shader));
 
   // build the pipeline layout that controls the I/O of the shader
-  // we are not using descriptor sets of other systems yet, so no need to use
-  // anything other than empty default
-  auto pipeline_layout_info = vkinit::pipeline_layout_create_info();
+  auto mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
   VkPushConstantRange triangle_push_constant;
   // starts at 0
   triangle_push_constant.offset = 0;
   triangle_push_constant.size = sizeof(MeshPushConstants);
   triangle_push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-  pipeline_layout_info.pPushConstantRanges = &triangle_push_constant;
-  pipeline_layout_info.pushConstantRangeCount = 1;
+  mesh_pipeline_layout_info.pPushConstantRanges = &triangle_push_constant;
+  mesh_pipeline_layout_info.pushConstantRangeCount = 1;
 
-  VkPipelineLayout triangle_pipeline_layout;
+  VkDescriptorSetLayout set_layouts[] = {_global_set_layout,
+                                         _object_set_layout};
 
-  VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr,
-                                  &triangle_pipeline_layout));
+  mesh_pipeline_layout_info.setLayoutCount = 2;
+  mesh_pipeline_layout_info.pSetLayouts = set_layouts;
 
-  PipelineBuilder pipeline_builder;
+  VkPipelineLayout mesh_pipeline_layout;
+  VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr,
+                                  &mesh_pipeline_layout));
+
+  pipeline_builder._pipeline_layout = mesh_pipeline_layout;
 
   pipeline_builder._depth_stencil = vkinit::depth_stencil_create_info(
       true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-  pipeline_builder._shader_stages.push_back(
-      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT,
-                                                triangle_vert_shader));
-
-  pipeline_builder._shader_stages.push_back(
-      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT,
-                                                triangle_frag_shader));
 
   pipeline_builder._vertex_input_info =
       vkinit::vertex_input_state_create_info();
@@ -763,87 +750,17 @@ void VulkanEngine::init_pipelines()
   pipeline_builder._color_blend_attachment =
       vkinit::color_blend_attachment_state();
 
-  pipeline_builder._pipeline_layout = triangle_pipeline_layout;
-
-  // auto triangle_pipeline =
-  //     pipeline_builder.build_pipeline(_device, _render_pass);
-
-  // create_material(triangle_pipeline, triangle_pipeline_layout, "tri_mat");
-
-  // clear the shader stages for the builder
-  pipeline_builder._shader_stages.clear();
-
-  // add the other shaders
-  pipeline_builder._shader_stages.push_back(
-      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT,
-                                                red_triangle_vert_shader));
-
-  pipeline_builder._shader_stages.push_back(
-      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT,
-                                                red_triangle_frag_shader));
-
-  // auto red_triangle_pipeline =
-  //     pipeline_builder.build_pipeline(_device, _render_pass);
-
-  // create_material(red_triangle_pipeline, triangle_pipeline_layout,
-  //                 "red_tri_mat");
-
-  // build the mesh pipeline
-  pipeline_builder._shader_stages.clear();
-
-  VkShaderModule mesh_vert_shader;
-  if (!load_shader_module("../shaders/tri_mesh.vert.spv", &mesh_vert_shader)) {
-    std::cout << "Error when building the mesh triangle vertex shader module\n";
-  }
-  else {
-    std::cout << "Mesh triangle vertex shader successfully loaded\n";
-  }
-
-  pipeline_builder._shader_stages.push_back(
-      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT,
-                                                mesh_vert_shader));
-
-  pipeline_builder._shader_stages.push_back(
-      vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT,
-                                                triangle_frag_shader));
-
-  auto mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
-
-  VkPushConstantRange push_constant;
-  // starts at 0
-  push_constant.offset = 0;
-  push_constant.size = sizeof(MeshPushConstants);
-  push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
-  mesh_pipeline_layout_info.pushConstantRangeCount = 1;
-
-  mesh_pipeline_layout_info.setLayoutCount = 1;
-  mesh_pipeline_layout_info.pSetLayouts = &_global_set_layout;
-
-  VkPipelineLayout mesh_pipeline_layout;
-  VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr,
-                                  &mesh_pipeline_layout));
-
-  pipeline_builder._pipeline_layout = mesh_pipeline_layout;
-
   auto mesh_pipeline = pipeline_builder.build_pipeline(_device, _render_pass);
 
   create_material(mesh_pipeline, mesh_pipeline_layout, "defaultmesh");
 
   // destroy all shader modules, outside of the queue
   vkDestroyShaderModule(_device, mesh_vert_shader, nullptr);
-  vkDestroyShaderModule(_device, red_triangle_vert_shader, nullptr);
-  vkDestroyShaderModule(_device, red_triangle_frag_shader, nullptr);
-  vkDestroyShaderModule(_device, triangle_vert_shader, nullptr);
-  vkDestroyShaderModule(_device, triangle_frag_shader, nullptr);
+  vkDestroyShaderModule(_device, color_frag_shader, nullptr);
 
   _main_deletion_queue.push_function([=, this]() {
-    // vkDestroyPipeline(_device, triangle_pipeline, nullptr);
-    // vkDestroyPipeline(_device, red_triangle_pipeline, nullptr);
     vkDestroyPipeline(_device, mesh_pipeline, nullptr);
 
-    vkDestroyPipelineLayout(_device, triangle_pipeline_layout, nullptr);
     vkDestroyPipelineLayout(_device, mesh_pipeline_layout, nullptr);
   });
 }
@@ -979,6 +896,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
   vmaUnmapMemory(_allocator, get_current_frame().camera_buffer._allocation);
 
   float framed = (static_cast<float>(_frame_number) / 120.f);
+
   _scene_parameters.ambient_color = {sin(framed), 0, cos(framed), 1};
 
   char *scene_data;
@@ -993,10 +911,25 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
 
   vmaUnmapMemory(_allocator, _scene_parameters_buffer._allocation);
 
+
+  void *object_data;
+  vmaMapMemory(_allocator, get_current_frame().object_buffer._allocation,
+               &object_data);
+
+  GPUObjectData *object_SSBO = (GPUObjectData *)object_data;
+
+  for (int index = 0; index < count; index++) {
+    RenderObject &object = first[index];
+    object_SSBO[index].model_matrix = object.transform_matrix;
+  }
+
+  vmaUnmapMemory(_allocator, get_current_frame().object_buffer._allocation);
+
+
   Mesh *last_mesh = nullptr;
   Material *last_material = nullptr;
-  for (int i = 0; i < count; i++) {
-    RenderObject &object = first[i];
+  for (int index = 0; index < count; index++) {
+    RenderObject &object = first[index];
 
     // only bind the pipeline if it doesnt match with the already bound one
     if (object.material != last_material) {
@@ -1013,6 +946,11 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
                               object.material->pipeline_layout, 0, 1,
                               &get_current_frame().global_descriptor, 1,
                               &uniform_offset);
+
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              object.material->pipeline_layout, 1, 1,
+                              &get_current_frame().object_descriptor, 0,
+                              nullptr);
     }
 
     MeshPushConstants constants;
@@ -1033,7 +971,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject *first,
 
     // we can now draw
     vkCmdDraw(cmd, static_cast<uint32_t>(object.mesh->_vertices.size()), 1, 0,
-              0);
+              static_cast<uint32_t>(index));
   }
 }
 
@@ -1051,14 +989,14 @@ void VulkanEngine::init_scene()
     for (int y = -20; y <= 20; y++) {
       RenderObject tri;
 
-      if (y % 4 == 0)
-        tri.mesh = get_mesh("triangle");
-      else if (y % 4 == 1)
-        tri.mesh = get_mesh("structure");
-      else if (y % 4 == 2)
-        tri.mesh = get_mesh("fence");
-      else
-        tri.mesh = get_mesh("roof");
+      // if (y % 4 == 0)
+      tri.mesh = get_mesh("triangle");
+      // else if (y % 4 == 1)
+      //   tri.mesh = get_mesh("structure");
+      // else if (y % 4 == 2)
+      //   tri.mesh = get_mesh("fence");
+      // else
+      //   tri.mesh = get_mesh("roof");
 
       // if (abs(y % 3) == 0)
       tri.material = get_material("defaultmesh");
@@ -1130,10 +1068,12 @@ AllocatedBuffer VulkanEngine::create_buffer(const size_t alloc_size,
 
 void VulkanEngine::init_descriptors()
 {
-  // create a descriptor pool that will hold 10 uniform buffers
+  // create a descriptor pool that will hold 10 uniform, dynamic uniform and
+  // storage buffers
   std::vector<VkDescriptorPoolSize> sizes = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
   };
 
   VkDescriptorPoolCreateInfo pool_info = {};
@@ -1145,18 +1085,33 @@ void VulkanEngine::init_descriptors()
 
   vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptor_pool);
 
+  // binding for storage buffer at 0
+  auto object_layout_binding = vkinit::descriptor_set_layout_binding(
+      VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+
+  // object set layout
+  VkDescriptorSetLayoutCreateInfo object_set_info = {};
+  object_set_info.bindingCount = 1;
+  object_set_info.flags = 0;
+  object_set_info.pNext = nullptr;
+  object_set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  object_set_info.pBindings = &object_layout_binding;
+
+  vkCreateDescriptorSetLayout(_device, &object_set_info, nullptr,
+                              &_object_set_layout);
+
   // binding for camera data at 0
-  auto cam_buffer_binding = vkinit::descriptor_set_layout_binding(
+  auto cam_layout_binding = vkinit::descriptor_set_layout_binding(
       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
-  // binding for scene data at 0
-  auto scene_buffer_binding = vkinit::descriptor_set_layout_binding(
+  // binding for scene data at 1
+  auto scene_layout_binding = vkinit::descriptor_set_layout_binding(
       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 
 
-  VkDescriptorSetLayoutBinding bindings[] = {cam_buffer_binding,
-                                             scene_buffer_binding};
+  VkDescriptorSetLayoutBinding bindings[] = {cam_layout_binding,
+                                             scene_layout_binding};
 
   VkDescriptorSetLayoutCreateInfo set_info = {};
   set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1171,6 +1126,11 @@ void VulkanEngine::init_descriptors()
   vkCreateDescriptorSetLayout(_device, &set_info, nullptr, &_global_set_layout);
 
   for (unsigned int index = 0; index < FRAME_OVERLAP; index++) {
+    constexpr int MAX_OBJECTS = 10000;
+    _frames[index].object_buffer = create_buffer(
+        sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_CPU_TO_GPU);
+
     _frames[index].camera_buffer =
         create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                       VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1194,6 +1154,18 @@ void VulkanEngine::init_descriptors()
                                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                              VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+    // allocate the descriptor set that will point to object buffer
+    VkDescriptorSetAllocateInfo object_set_alloc = {};
+    object_set_alloc.pNext = nullptr;
+    object_set_alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    object_set_alloc.descriptorPool = _descriptor_pool;
+    object_set_alloc.descriptorSetCount = 1;
+    object_set_alloc.pSetLayouts = &_object_set_layout;
+
+    vkAllocateDescriptorSets(_device, &object_set_alloc,
+                             &_frames[index].object_descriptor);
+
+
     VkDescriptorBufferInfo camera_info;
     camera_info.buffer = _frames[index].camera_buffer._buffer;
     camera_info.offset = 0;
@@ -1204,6 +1176,12 @@ void VulkanEngine::init_descriptors()
     scene_info.offset = 0;
     scene_info.range = sizeof(GPUSceneData);
 
+    VkDescriptorBufferInfo object_buffer_info;
+    object_buffer_info.buffer = _frames[index].object_buffer._buffer;
+    object_buffer_info.offset = 0;
+    object_buffer_info.range = sizeof(GPUObjectData) * MAX_OBJECTS;
+
+
     auto camera_write = vkinit::write_descriptor_buffer(
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[index].global_descriptor,
         &camera_info, 0);
@@ -1211,17 +1189,28 @@ void VulkanEngine::init_descriptors()
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
         _frames[index].global_descriptor, &scene_info, 1);
 
-    VkWriteDescriptorSet set_writes[] = {camera_write, scene_write};
-    vkUpdateDescriptorSets(_device, 2, set_writes, 0, nullptr);
+    auto object_write = vkinit::write_descriptor_buffer(
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _frames[index].object_descriptor,
+        &object_buffer_info, 0);
+
+    VkWriteDescriptorSet set_writes[] = {camera_write, scene_write,
+                                         object_write};
+    vkUpdateDescriptorSets(_device, 3, set_writes, 0, nullptr);
   }
 
-  for (unsigned int index = 0; index < FRAME_OVERLAP; index++)
+  for (unsigned int index = 0; index < FRAME_OVERLAP; index++) {
+
     _main_deletion_queue.push_function([this, index]() {
       vmaDestroyBuffer(_allocator, _frames[index].camera_buffer._buffer,
                        _frames[index].camera_buffer._allocation);
+
+      vmaDestroyBuffer(_allocator, _frames[index].object_buffer._buffer,
+                       _frames[index].object_buffer._allocation);
     });
+  }
 
   _main_deletion_queue.push_function([this]() {
+    vkDestroyDescriptorSetLayout(_device, _object_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(_device, _global_set_layout, nullptr);
     vkDestroyDescriptorPool(_device, _descriptor_pool, nullptr);
     vmaDestroyBuffer(_allocator, _scene_parameters_buffer._buffer,

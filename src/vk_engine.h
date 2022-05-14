@@ -67,6 +67,9 @@ struct FrameData {
   AllocatedBuffer camera_buffer;
 
   VkDescriptorSet global_descriptor;
+
+  AllocatedBuffer object_buffer;
+  VkDescriptorSet object_descriptor;
 };
 
 struct GPUCameraData {
@@ -81,6 +84,10 @@ struct GPUSceneData {
   glm::vec4 ambient_color;
   glm::vec4 sunlight_direction; // w for sun power
   glm::vec4 sunlight_color;
+};
+
+struct GPUObjectData {
+  glm::mat4 model_matrix;
 };
 
 enum class Move { UP, DOWN, LEFT, RIGHT };
@@ -161,6 +168,7 @@ public:
                                 const VkBufferUsageFlagBits usage,
                                 const VmaMemoryUsage memory_usage);
 
+  VkDescriptorSetLayout _object_set_layout;
   VkDescriptorSetLayout _global_set_layout;
   VkDescriptorPool _descriptor_pool;
 
